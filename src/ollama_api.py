@@ -1,8 +1,11 @@
 import requests
 import json
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from dotenv import load_dotenv
+load_dotenv()
 
 app = FastAPI()
 app.add_middleware(
@@ -18,8 +21,8 @@ class ChatRequest(BaseModel):
 
 @app.post("/chat")
 def chat_with_ollama(chat_request: ChatRequest):
-    model="gemma3:4b-it-qat"
-    url = "http://100.103.21.230:11434/api/chat"
+    model = os.getenv("ollama_model")
+    url = os.getenv("ollama_url") + "/chat"
     
     print(chat_request.question)
     
