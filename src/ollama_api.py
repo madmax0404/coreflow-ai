@@ -17,22 +17,40 @@ app.add_middleware(
 )
 
 class ChatRequest(BaseModel):
-    question: str
+    messages: list
 
 @app.post("/chat")
 def chat_with_ollama(chat_request: ChatRequest):
     model = os.getenv("ollama_model")
     url = os.getenv("ollama_url") + "/chat"
     
-    print(chat_request.question)
+    payload = {
+        "model": model,
+        "messages": chat_request.messages,
+        "stream": False
+    }
+    
+    response = requests.post(url, json=payload).json()
+    
+    return response
+
+class TitleRequest(BaseModel):
+    message: str
+
+@app.post("/create_title")
+def create_title(title_request: TitleRequest):
+    model = os.getenv("ollama_model")
+    url = os.getenv("ollama_url") + "/chat"
     
     payload = {
         "model": model,
         "messages": [
-            {"role": "user", "content": chat_request.question}
+            {"role": "system", "content": "사용자의 질문에 알맞는 20글자 미만의 짧은 제목을 한글로 작성해줘."},
+            {"role": "user", "content": title_request.message}
         ],
         "stream": False
     }
     
-    response = requests.post(url, json=payload)
-    return response.json()["message"]["content"]
+    response = requests.post(url, json=payload).json()
+    
+    return response
