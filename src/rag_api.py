@@ -41,19 +41,6 @@ class CustomEmbeddings:
         }
         return requests.post(embed_url, json=embed_query_payload, headers=headers).json()["embeddings"][0]
     
-embeddings = CustomEmbeddings()
-
-vector_store = Chroma(
-    persist_directory="../chroma_db",
-    embedding_function=embeddings
-)
-
-# mmr 기반
-retriever = vector_store.as_retriever(
-    search_type="mmr",
-    search_kwargs={"k":10, "fetch_k":50}
-)
-
 class ChatRequest(BaseModel):
     messages: list
     
@@ -96,6 +83,19 @@ def chat_with_ollama(chat_request: ChatRequest):
     if "knowledge_rag" not in classification:
         messages = chat_request.messages
     else:
+        embeddings = CustomEmbeddings()
+
+        vector_store = Chroma(
+            persist_directory="../chroma_db",
+            embedding_function=embeddings
+        )
+
+        # mmr 기반
+        retriever = vector_store.as_retriever(
+            search_type="mmr",
+            search_kwargs={"k":10, "fetch_k":50}
+        )
+        
         # RAG용 질문으로 변환
         rag_payload = {
             "model": model,
