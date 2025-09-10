@@ -67,22 +67,26 @@ def chat_with_ollama(chat_request: ChatRequest):
     model = os.getenv("ollama_model")
     url = os.getenv("ollama_url") + "/chat"
     
-    classification_payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": prompt_classification_prompt},
-            chat_request.messages[-1]
-        ],
-        "stream": False,
-        "keep_alive": 0
-    }
+    # print(chat_request.messages[-1]["content"].lower())
     
-    classification = requests.post(url, json=classification_payload).json()["message"]["content"]
-    print(classification)
+    # classification_payload = {
+    #     "model": model,
+    #     "messages": [
+    #         {"role": "system", "content": prompt_classification_prompt},
+    #         chat_request.messages[-1]
+    #     ],
+    #     "stream": False,
+    #     "keep_alive": 0
+    # }
     
-    if "knowledge_rag" not in classification:
+    # classification = requests.post(url, json=classification_payload).json()["message"]["content"]
+    # print(classification)
+    
+    if "coreflow" not in chat_request.messages[-1]["content"].lower():
+        print("RAG 미실행")
         messages = chat_request.messages
     else:
+        print("RAG 실행")
         embeddings = CustomEmbeddings()
 
         vector_store = Chroma(
@@ -116,7 +120,7 @@ Search query:"""},
         # RAG
         rag_query = requests.post(url, json=rag_payload).json()["message"]["content"].replace("Search query:", "").replace("\n", "").strip()
         print(rag_query)
-        docs_list = retriever.get_relevant_documents(rag_query)
+        docs_list = retriever.invoke(rag_query)
         
         # print(docs_list)
         
@@ -124,7 +128,7 @@ Search query:"""},
         searched_parent_docs_df = pd.DataFrame({"docs":searched_parent_docs})
         searched_parent_docs_df = searched_parent_docs_df.drop_duplicates()
         searched_parent_docs = searched_parent_docs_df["docs"].tolist()
-        print(len(searched_parent_docs))
+        # print(len(searched_parent_docs))
         
         # time.sleep(120)
         
