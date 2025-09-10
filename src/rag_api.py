@@ -67,6 +67,8 @@ def chat_with_ollama(chat_request: ChatRequest):
     model = os.getenv("ollama_model")
     url = os.getenv("ollama_url") + "/chat"
     
+    query = chat_request.messages[-1]["content"]
+    
     # print(chat_request.messages[-1]["content"].lower())
     
     # classification_payload = {
@@ -82,7 +84,7 @@ def chat_with_ollama(chat_request: ChatRequest):
     # classification = requests.post(url, json=classification_payload).json()["message"]["content"]
     # print(classification)
     
-    if "coreflow" not in chat_request.messages[-1]["content"].lower():
+    if "coreflow" not in query.lower():
         print("RAG 미실행")
         messages = chat_request.messages
     else:
@@ -133,7 +135,7 @@ Search query:"""},
         # time.sleep(120)
         
         # Reranker
-        rag_response = requests.post(rerank_url, json={"query":rag_query, "documents":searched_parent_docs}, headers=headers)
+        rag_response = requests.post(rerank_url, json={"query":query, "documents":searched_parent_docs}, headers=headers)
         
         # print(rag_response)
         
@@ -157,7 +159,7 @@ Context:
 {best_results}
 
 Question:
-{chat_request.messages[-1]["content"]}
+{query}
 
 Answer:"""})
     
