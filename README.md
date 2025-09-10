@@ -122,12 +122,10 @@ Figure 1에서 확인 가능하듯, 이러한 방식은 성공적으로 모델�
 
 ## License
 
-Code © 2025 Jongyun Han (Max). Released under the MIT License.
-See the LICENSE file for details.
+Code © 2025 Jongyun Han (Max). Released under the MIT License. See the LICENSE file for details.
 
-Note: Datasets are NOT redistributed in this repository.
-Please download them from the official Kaggle competition page
-and comply with the competition rules/EULA.
+Note: 본 레포지토리에는 **실제 데이터셋은 포함되어 있지 않으며**, 예시 규정 문서는 프로젝트 설명을 위해 생성된 데이터임. 
+실제 환경에 적용 시에는 반드시 해당 조직의 내부 규정/데이터를 사용해야 합니다.
 
 
 
