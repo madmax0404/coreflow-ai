@@ -114,11 +114,9 @@ Figure 1에서 확인 가능하듯, 이러한 방식은 성공적으로 모델�
 
 ## Acknowledgements
 
-KH정보교육원에 감사드립니다.
-
-본 프로젝트는 다음 오픈소스의 도움을 받았습니다: Python, Gemma3, Qwen, Ollama, LangChain, Transformers, Sentence Transformers, Chroma, Pydantic, pandas, FastAPI, Ubuntu, VS Code, Jupyter.
-
-모든 데이터 이용은 대회 규정과 라이선스를 준수합니다.
+- 본 프로젝트는 **KH정보교육원** 파이널 팀프로젝트 과정 중 진행되었습니다.
+- ERP 시스템 CoreFlow를 함께 개발한 팀원들에게 감사드립니다. (제가 맡은 AI 파트는 그 덕에 빛날 수 있었습니다 🙃)
+- RAG 및 LLM 오픈소스 생태계(Hugging Face, LangChain, Ollama, Chroma 등)를 만들어 주신 커뮤니티에도 큰 감사를 드립니다.
 
 ---
 
