@@ -1,0 +1,13 @@
+[project]
+name = "finalprojectaiworkspace"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "langchain-core>=0.3.76",
+    "langchain-openai>=0.3.33",
+    "langsmith>=0.4.27",
+    "openai>=1.107.1",
+    "scikit-learn>=1.7.2",
+]
