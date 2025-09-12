@@ -65,7 +65,7 @@ prompt_classification_prompt = """다음 사용자의 메시지를 분류하세�
 @app.post("/chat")
 def chat_with_ollama(chat_request: ChatRequest):
     model = os.getenv("ollama_model")
-    url = os.getenv("ollama_url") + "/chat"
+    url = os.getenv("ollama_url") + "/api/chat"
     
     query = chat_request.messages[-1]["content"]
     
@@ -183,7 +183,7 @@ class TitleRequest(BaseModel):
 @app.post("/create_title")
 def create_title(title_request: TitleRequest):
     model = os.getenv("ollama_model")
-    url = os.getenv("ollama_url") + "/chat"
+    url = os.getenv("ollama_url") + "/api/chat"
     
     payload = {
         "model": model,
