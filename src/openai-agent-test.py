@@ -24,7 +24,7 @@ async def main():
     async with MCPServerStdio(
         params={
             "command": "uv",
-            "args": ["run", "python", "./src/agents/mcp/server.py", "stdio"],
+            "args": ["run", "python", "./src/agents/mcp/test_server.py", "stdio"],
         }
     ) as server:
         # MCP 서버에서 제공하는 도구 목록 가져오기
@@ -48,6 +48,7 @@ async def main():
         ]
         result = await Runner.run(agent, messages)
         print(result)
+        print(result.final_output)
         
 if __name__ == "__main__":
     asyncio.run(main())
