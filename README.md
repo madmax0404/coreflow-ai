@@ -1,4 +1,4 @@
-# CoreFlow AI - RAG
+# CoreFlow AI - RAG / Agent / MCP
 
 KH정보교육원 파이널 프로젝트 ERP 시스템 CoreFlow의 AI 파트.
 
