@@ -6,6 +6,7 @@ from agents import Agent, Runner
 from typing import List, Optional
 import nest_asyncio
 nest_asyncio.apply()
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -174,16 +175,19 @@ Search query:"""
 
 mcp = FastMCP("Local MCP Server for tools")
 
+# class RagReq(BaseModel):
+#     query: str
+
 @mcp.tool()
 def rag(query:str) -> str:
     """CoreFlow 사내 문서 검색"""
+    
+    # query = rag_req.query
     
     if not parent_docs_list:
         return "RAG 데이터가 준비되지 않았습니다. 관리자에게 DATA_PATH를 확인하세요."
     
     compressed = asyncio.run(run_query_convert_agent(query))["out"]
-    
-    print(compressed)
     
     embeddings = CustomEmbeddings()
     
@@ -220,4 +224,4 @@ def current_weather(location: str) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run()   # CLI 인자로 `stdio` 받으면 stdio로 기동
+    mcp.run(transport="streamable-http")
