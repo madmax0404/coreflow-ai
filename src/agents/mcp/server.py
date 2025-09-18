@@ -1,9 +1,9 @@
 from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
-import os, requests, pandas as pd, httpx, asyncio
+import os, requests, pandas as pd, httpx, asyncio, json
 from langchain_chroma import Chroma
 from agents import Agent, Runner
-from typing import List, Optional
+from typing import List, Optional, Any
 import nest_asyncio
 nest_asyncio.apply()
 from pydantic import BaseModel
@@ -179,8 +179,18 @@ mcp = FastMCP("Local MCP Server for tools")
 #     query: str
 
 @mcp.tool()
-def rag(query:str) -> str:
+def rag(query: Any) -> str:
     """CoreFlow 사내 문서 검색"""
+    
+    if isinstance(query, dict):
+        # 위에서 했던 키 스캔
+        for k in ("text","title","content","value","input","query"):
+            if k in query and isinstance(query[k], str):
+                query = query[k]; break
+        else:
+            query = json.dumps(query, ensure_ascii=False)
+    elif not isinstance(query, str):
+        query = str(query)
     
     # query = rag_req.query
     
@@ -217,8 +227,13 @@ def rag(query:str) -> str:
 
 
 @mcp.tool()
-def current_weather(location: str) -> str:
+def current_weather(location: Any) -> str:
     """Return the current weather for the requested location in Korea."""
+    
+    if isinstance(location, dict):
+        location = location["title"]
+    else:
+        location = str(location)
 
     return fetch_current_weather(location)
 

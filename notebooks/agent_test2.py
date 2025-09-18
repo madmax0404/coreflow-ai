@@ -1,15 +1,13 @@
-import os, pathlib, uuid, sys, asyncio
+import os, pathlib, asyncio
 from dotenv import load_dotenv
 load_dotenv()
-from langchain.agents.react.agent import create_react_agent
 from langchain_openai import ChatOpenAI
 from langchain import hub
-from langchain_core.tools import tool
-from langchain.tools import Tool
 from langchain.agents import AgentExecutor, create_structured_chat_agent
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
-from langchain_mcp_adapters.tools import load_mcp_tools
+from langchain_core.messages.human import HumanMessage
+from langchain_core.messages.ai import AIMessage
 
 ollama_url = os.getenv("ollama_url")
 ollama_model = os.getenv("ollama_model")
@@ -35,28 +33,10 @@ client = MultiServerMCPClient(
     }
 )
 
-# print(client.session("RAG_and_weather"))
-
-# async def get_tools():
-#     async with client.session("RAG_and_weather") as session:
-#         tools = await load_mcp_tools(session)
-        
-#         return tools
-    
-# tools = asyncio.run(get_tools())
-
-# print(tools)
-
-# tools = load_mcp_tools
-
 tools = asyncio.run(client.get_tools())
 
-# print(tools)
-
-# prompt = hub.pull("hwchase17/react-chat")
 prompt = hub.pull("hwchase17/structured-chat-agent")
 
-# agent = create_react_agent(llm, tools, prompt=prompt)
 agent = create_structured_chat_agent(llm, tools, prompt)
 
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
@@ -82,3 +62,19 @@ print(res)
 
 res = agent_with_history.invoke({"input": "what's the answer?"}, config=cfg)
 print(res)
+
+history = agent_with_history.get_session_history("user-123")
+
+print(history)
+
+print(type(history))
+
+async def run_agent():
+    res = await agent_with_history.ainvoke({"input": "CoreFlow의 휴가 규정에 대해서 알려줘."}, config=cfg)
+    print(res)
+    
+asyncio.run(run_agent())
+
+# res = agent_with_history.invoke({"input": "CoreFlow의 휴가 규정에 대해서 알려줘."}, config=cfg)
+# print(res)
+
