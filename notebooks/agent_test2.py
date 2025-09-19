@@ -8,13 +8,20 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.messages.human import HumanMessage
 from langchain_core.messages.ai import AIMessage
+from pydantic import BaseModel, Field
+from langchain_core.tools import StructuredTool
 
 ollama_url = os.getenv("ollama_url")
 ollama_model = os.getenv("ollama_model")
 
+if not ollama_url or not ollama_model:
+    raise RuntimeError("ollama_url and ollama_model environment variables must be set.")
+
+ollama_base_url = ollama_url.rstrip("/") + "/"
+
 llm = ChatOpenAI(
     model=ollama_model,
-    base_url=ollama_url+"v1",
+    base_url=f"{ollama_base_url}v1",
     api_key="ollama",
     temperature=0.2,
 )
@@ -33,9 +40,70 @@ client = MultiServerMCPClient(
     }
 )
 
-tools = asyncio.run(client.get_tools())
+try:
+    tools_from_mcp = asyncio.run(client.get_tools())
+except Exception as exc:
+    raise RuntimeError("Failed to load tools from MCP server.") from exc
 
-prompt = hub.pull("hwchase17/structured-chat-agent")
+# ----------------------------
+# 2) 원본 MCP 'rag' 툴 찾기 (프리픽스 유연 대응)
+# ----------------------------
+def _is_rag_tool(t):
+    name = getattr(t, "name", "")
+    return name == "rag" or name.endswith(":rag") or "rag" == name.split(":")[-1]
+
+try:
+    base_rag_tool = next(t for t in tools_from_mcp if _is_rag_tool(t))
+except StopIteration:
+    raise RuntimeError("MCP 서버에서 'rag' 툴을 찾지 못했습니다. 툴 이름/프리픽스를 확인하세요.")
+
+# ----------------------------
+# 3) StructuredTool 래퍼로 스키마 강제
+# ----------------------------
+class RagArgs(BaseModel):
+    query: str = Field(..., description="Korean search query text")
+    
+async def _rag_call(query: str) -> str:
+    """Wrap the underlying MCP rag tool for LangChain."""
+    try:
+        raw_result = await base_rag_tool.ainvoke({"query": query})
+    except Exception as exc:
+        return f"RAG tool error: {exc}"
+    if isinstance(raw_result, list):
+        compiled = '\n\n---\n\n'.join(
+            str(item).strip() for item in raw_result if str(item).strip()
+        )
+    else:
+        compiled = str(raw_result or "").strip()
+    return compiled or "No related documents found."
+
+
+rag_wrapped = StructuredTool.from_function(
+    name="rag",
+    description="Search internal CoreFlow documents and return top snippets.",
+    args_schema=RagArgs,
+    coroutine=_rag_call,  # 비동기 호출
+)
+
+# 원본 rag는 목록에서 제거하고, 대신 래퍼를 넣는다(중복 피함)
+other_tools = [t for t in tools_from_mcp if t is not base_rag_tool]
+tools = [rag_wrapped, *other_tools]
+
+# ----------------------------
+# 4) 프롬프트: structured-chat 프롬프트 + 포맷 수위 더 올리기(코드블록 금지)
+# ----------------------------
+base_prompt = hub.pull("hwchase17/structured-chat-agent")
+from langchain_core.prompts import ChatPromptTemplate
+
+strict_rules = (
+    "IMPORTANT:\n"
+    "- Do NOT use Markdown code fences.\n"
+    "- When using a tool, output MUST be a JSON object matching the tool schema.\n"
+    "- For 'rag', the only valid input is: {{\"query\": \"<text>\"}}\n"
+)
+prompt = ChatPromptTemplate.from_messages(
+    [base_prompt.messages[0], ("system", strict_rules), *base_prompt.messages[1:]]
+)
 
 agent = create_structured_chat_agent(llm, tools, prompt)
 
@@ -57,23 +125,26 @@ agent_with_history = RunnableWithMessageHistory(
 
 cfg = {"configurable": {"session_id": "user-123"}}
 
-res = agent_with_history.invoke({"input": "what's 1+1?"}, config=cfg)
-print(res)
+# res = agent_with_history.invoke({"input": "what's 1+1?"}, config=cfg)
+# print(res)
 
-res = agent_with_history.invoke({"input": "what's the answer?"}, config=cfg)
-print(res)
+# res = agent_with_history.invoke({"input": "what's the answer?"}, config=cfg)
+# print(res)
 
-history = agent_with_history.get_session_history("user-123")
+# history = agent_with_history.get_session_history("user-123")
 
-print(history)
+# print(history)
 
-print(type(history))
+# print(type(history))
 
 async def run_agent():
     res = await agent_with_history.ainvoke({"input": "CoreFlow의 휴가 규정에 대해서 알려줘."}, config=cfg)
-    print(res)
+    # print(res)
     
 asyncio.run(run_agent())
+
+# res = agent_with_history.ainvoke({"input": "CoreFlow의 휴가 규정에 대해서 알려줘."}, config=cfg)
+# print(res)
 
 # res = agent_with_history.invoke({"input": "CoreFlow의 휴가 규정에 대해서 알려줘."}, config=cfg)
 # print(res)

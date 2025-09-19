@@ -1,12 +1,12 @@
 from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
-import os, requests, pandas as pd, httpx, asyncio, json
+import os, requests, pandas as pd, httpx, json, time
 from langchain_chroma import Chroma
 from agents import Agent, Runner
 from typing import List, Optional, Any
 import nest_asyncio
 nest_asyncio.apply()
-from pydantic import BaseModel
+from mcp.types import TextContent
 
 load_dotenv()
 
@@ -55,20 +55,63 @@ WEATHER_CODE_DESCRIPTIONS = {
     99: "Thunderstorm with heavy hail",
 }
 
+REQUEST_TIMEOUT = 120
+MAX_REQUEST_RETRIES = 3
+
+def _post_json(url: str, payload: dict[str, Any], operation: str) -> Any:
+    last_error: RuntimeError | None = None
+    for attempt in range(MAX_REQUEST_RETRIES):
+        try:
+            response = requests.post(
+                url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT
+            )
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else "unknown"
+            body = exc.response.text if exc.response is not None else ""
+            message = f"{operation} request failed with status {status}: {body[:200]}"
+            last_error = RuntimeError(message)
+            if 500 <= getattr(exc.response, "status_code", 0) < 600 and attempt < MAX_REQUEST_RETRIES - 1:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            raise RuntimeError(message) from exc
+        except requests.RequestException as exc:
+            last_error = RuntimeError(f"{operation} request failed: {exc}")
+            if attempt < MAX_REQUEST_RETRIES - 1:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            raise last_error from exc
+        try:
+            return response.json()
+        except ValueError as exc:
+            message = f"{operation} service returned invalid JSON."
+            raise RuntimeError(message) from exc
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"{operation} request failed unexpectedly.")
+
 class CustomEmbeddings:
     def embed_documents(self, texts):
-        embed_docs_payload = {
-            "texts": texts,
-            "is_query": False
-        }
-        return requests.post(embed_url, json=embed_docs_payload, headers=headers).json()["embeddings"]
-    
+        data = _post_json(
+            embed_url,
+            {"texts": texts, "is_query": False},
+            "Embedding",
+        )
+        embeddings = data.get("embeddings")
+        if not isinstance(embeddings, list):
+            raise RuntimeError("Embedding service response missing embeddings.")
+        return embeddings
+
     def embed_query(self, text):
-        embed_query_payload = {
-            "texts": [text],
-            "is_query": True
-        }
-        return requests.post(embed_url, json=embed_query_payload, headers=headers).json()["embeddings"][0]
+        data = _post_json(
+            embed_url,
+            {"texts": [text], "is_query": True},
+            "Embedding",
+        )
+        embeddings = data.get("embeddings")
+        if not isinstance(embeddings, list) or not embeddings:
+            raise RuntimeError("Embedding service response missing embeddings.")
+        return embeddings[0]
 
 def search_parent_docs(docs, parent_docs):
     searched_docs = []
@@ -170,7 +213,7 @@ Search query:"""
     rag_query_result = await Runner.run(qc_agent, f'User input: "{query}"\nSearch query:')
     compressed = (rag_query_result.final_output or "").replace("Search query:", "").strip() or query
     
-    return {"out": compressed}
+    return compressed
     
 
 mcp = FastMCP("Local MCP Server for tools")
@@ -179,55 +222,84 @@ mcp = FastMCP("Local MCP Server for tools")
 #     query: str
 
 @mcp.tool()
-def rag(query: Any) -> str:
-    """CoreFlow 사내 문서 검색"""
-    
-    if isinstance(query, dict):
-        # 위에서 했던 키 스캔
-        for k in ("text","title","content","value","input","query"):
-            if k in query and isinstance(query[k], str):
-                query = query[k]; break
-        else:
-            query = json.dumps(query, ensure_ascii=False)
-    elif not isinstance(query, str):
-        query = str(query)
-    
-    # query = rag_req.query
-    
+async def rag(query: str) -> TextContent:
+    """CoreFlow internal document search."""
+    normalized_query = query if isinstance(query, str) else json.dumps(query, ensure_ascii=False)
+    normalized_query = (normalized_query or "").strip()
+    if not normalized_query:
+        return TextContent(type="text", text="Please provide a query to search.", mimeType="text/plain")
+
     if not parent_docs_list:
-        return "RAG 데이터가 준비되지 않았습니다. 관리자에게 DATA_PATH를 확인하세요."
-    
-    compressed = asyncio.run(run_query_convert_agent(query))["out"]
-    
+        return TextContent(
+            type="text",
+            text="RAG index is not ready. Please verify DATA_PATH.",
+            mimeType="text/plain",
+        )
+
+    try:
+        compressed = await run_query_convert_agent(normalized_query)
+    except Exception as exc:
+        return TextContent(
+            type="text",
+            text=f"Failed to prepare search query: {exc}",
+            mimeType="text/plain",
+        )
+
     embeddings = CustomEmbeddings()
-    
-    vector_store = Chroma(
-        persist_directory=DB_PATH,
-        embedding_function=embeddings
-    )
-    
-    retriever = vector_store.as_retriever(search_type="mmr", search_kwargs={"k": 10, "fetch_k": 50})
-    docs_list = retriever.invoke(compressed)
-    
+    try:
+        vector_store = Chroma(
+            persist_directory=DB_PATH,
+            embedding_function=embeddings,
+        )
+        retriever = vector_store.as_retriever(
+            search_type="mmr", search_kwargs={"k": 10, "fetch_k": 50}
+        )
+        docs_list = retriever.invoke(compressed)
+    except Exception as exc:
+        return TextContent(
+            type="text",
+            text=f"Vector store error: {exc}",
+            mimeType="text/plain",
+        )
+
     first_searched_parent_docs = search_parent_docs(docs_list, parent_docs_list)
-    searched_parent_docs_df = pd.DataFrame({"docs":first_searched_parent_docs})
-    searched_parent_docs_df = searched_parent_docs_df.drop_duplicates()
+    searched_parent_docs_df = pd.DataFrame({"docs": first_searched_parent_docs}).drop_duplicates()
     searched_parent_docs = searched_parent_docs_df["docs"].tolist()
-    
-    rerank_response = requests.post(rerank_url, json={"query":query, "documents":searched_parent_docs}, headers=headers)
-    
-    best_results = []
-    for result in rerank_response.json()["results"][:5]:
-        best_results.append(result["text"])
-    
+
+    if not searched_parent_docs:
+        return TextContent(type="text", text="No related documents found.", mimeType="text/plain")
+
+    try:
+        rerank_data = _post_json(
+            rerank_url,
+            {"query": normalized_query, "documents": searched_parent_docs},
+            "Rerank",
+        )
+    except RuntimeError as exc:
+        return TextContent(type="text", text=str(exc), mimeType="text/plain")
+
+    results = rerank_data.get("results") if isinstance(rerank_data, dict) else None
+    best_results: list[str] = []
+    if isinstance(results, list):
+        for result in results:
+            text = result.get("text") if isinstance(result, dict) else None
+            if text:
+                best_results.append(text)
+            if len(best_results) == 5:
+                break
+
     if not best_results:
-        return "관련 문서를 찾지 못했습니다."
-    
-    return "\n\n---\n\n".join(best_results)
+        return TextContent(type="text", text="No related documents found.", mimeType="text/plain")
+
+    out = "\n\n---\n\n".join(best_results)
+
+    return TextContent(type="text", text=out, mimeType="text/plain")
+
+
 
 
 @mcp.tool()
-def current_weather(location: Any) -> str:
+def current_weather(location: str) -> str:
     """Return the current weather for the requested location in Korea."""
     
     if isinstance(location, dict):
