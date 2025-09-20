@@ -1,9 +1,11 @@
 from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
+import asyncio
+import logging
 import os, requests, pandas as pd, httpx, json, time
 from langchain_chroma import Chroma
 from agents import Agent, Runner
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Awaitable, TypeVar
 import nest_asyncio
 nest_asyncio.apply()
 from mcp.types import TextContent
@@ -16,8 +18,8 @@ headers = {
 
 API_KEY = os.getenv("myserver_api_key")
 
-embed_url = os.getenv("myserver_url")+":8000/embed"
-rerank_url = os.getenv("myserver_url")+":8000/rerank"
+embed_url = os.getenv("myserver_url")+":8001/embed"
+rerank_url = os.getenv("myserver_url")+":8001/rerank"
 
 GEOCODE_API_URL = os.getenv("geocode_url")
 geocode_api_key = os.getenv("geocode_api_key")
@@ -57,6 +59,45 @@ WEATHER_CODE_DESCRIPTIONS = {
 
 REQUEST_TIMEOUT = 120
 MAX_REQUEST_RETRIES = 3
+
+T = TypeVar("T")
+
+logger = logging.getLogger(__name__)
+
+
+def _parse_port(value: str | None) -> int | None:
+    if not value:
+        return None
+    try:
+        port = int(value)
+    except ValueError:
+        logger.warning("Invalid MCP_STREAMABLE_HTTP_PORT value '%s'.", value)
+        return None
+    if not (0 <= port <= 65535):
+        logger.warning("Out-of-range MCP_STREAMABLE_HTTP_PORT value '%s'.", value)
+        return None
+    return port
+
+
+def _parse_port_list(value: str | None) -> list[int]:
+    if not value:
+        return []
+    ports: list[int] = []
+    for item in value.split(","):
+        parsed = _parse_port(item.strip())
+        if parsed is not None and parsed not in ports:
+            ports.append(parsed)
+    return ports
+
+
+def _run_async(awaitable: Awaitable[T]) -> T:
+    """Execute an awaitable from synchronous code using the active loop."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(awaitable)
+
+    return loop.run_until_complete(awaitable)
 
 def _post_json(url: str, payload: dict[str, Any], operation: str) -> Any:
     last_error: RuntimeError | None = None
@@ -191,6 +232,22 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # server.py 위치
 DATA_PATH = os.path.join(BASE_DIR, "..", "..", "..", "data", "parent_split_docs_20250909.csv")
 DB_PATH = os.path.join(BASE_DIR, "..", "..", "..", "chroma_db")
 
+STREAMABLE_HTTP_HOST = os.getenv("MCP_STREAMABLE_HTTP_HOST", "127.0.0.1")
+DEFAULT_STREAMABLE_HTTP_PORT = 8000
+CONFIGURED_STREAMABLE_HTTP_PORT = _parse_port(os.getenv("MCP_STREAMABLE_HTTP_PORT"))
+STREAMABLE_HTTP_PORT = (
+    CONFIGURED_STREAMABLE_HTTP_PORT
+    if CONFIGURED_STREAMABLE_HTTP_PORT is not None
+    else DEFAULT_STREAMABLE_HTTP_PORT
+)
+DEFAULT_STREAMABLE_HTTP_FALLBACK_PORTS = [8010, 8020, 8030]
+CONFIGURED_STREAMABLE_HTTP_FALLBACK_PORTS = _parse_port_list(
+    os.getenv("MCP_STREAMABLE_HTTP_FALLBACK_PORTS")
+)
+STREAMABLE_HTTP_FALLBACK_PORTS = CONFIGURED_STREAMABLE_HTTP_FALLBACK_PORTS + [
+    port for port in DEFAULT_STREAMABLE_HTTP_FALLBACK_PORTS if port not in CONFIGURED_STREAMABLE_HTTP_FALLBACK_PORTS
+]
+
 # CSV/VectorStore는 프로세스 시작 시 1회 로드
 parent_docs_list: List[str] = []
 if os.path.isfile(DATA_PATH):
@@ -201,7 +258,7 @@ else:
     parent_docs_list = []
 
 # RAG용 질문으로 변환
-async def run_query_convert_agent(query:str) -> str:
+def run_query_convert_agent(query: str) -> str:
     instructions = """You are an assistant that rewrites user input into a concise search query.
 - Focus on extracting the key entities, concepts, and intent.
 - Remove unnecessary filler words.
@@ -210,19 +267,13 @@ async def run_query_convert_agent(query:str) -> str:
 User input: "{user_prompt}"
 Search query:"""
     qc_agent = Agent(name="Query Convert Assistant", instructions=instructions)
-    rag_query_result = await Runner.run(qc_agent, f'User input: "{query}"\nSearch query:')
+    rag_query_result = _run_async(
+        Runner.run(qc_agent, f'User input: "{query}"\nSearch query:')
+    )
     compressed = (rag_query_result.final_output or "").replace("Search query:", "").strip() or query
     
     return compressed
-    
-
-mcp = FastMCP("Local MCP Server for tools")
-
-# class RagReq(BaseModel):
-#     query: str
-
-@mcp.tool()
-async def rag(query: str) -> TextContent:
+def rag(query: str) -> TextContent:
     """CoreFlow internal document search."""
     normalized_query = query if isinstance(query, str) else json.dumps(query, ensure_ascii=False)
     normalized_query = (normalized_query or "").strip()
@@ -237,7 +288,7 @@ async def rag(query: str) -> TextContent:
         )
 
     try:
-        compressed = await run_query_convert_agent(normalized_query)
+        compressed = run_query_convert_agent(normalized_query)
     except Exception as exc:
         return TextContent(
             type="text",
@@ -298,7 +349,6 @@ async def rag(query: str) -> TextContent:
 
 
 
-@mcp.tool()
 def current_weather(location: str) -> str:
     """Return the current weather for the requested location in Korea."""
     
@@ -310,5 +360,45 @@ def current_weather(location: str) -> str:
     return fetch_current_weather(location)
 
 
+def _build_mcp(port: int) -> FastMCP:
+    server = FastMCP(
+        "Local MCP Server for tools",
+        host=STREAMABLE_HTTP_HOST,
+        port=port,
+    )
+    server.tool()(rag)
+    server.tool()(current_weather)
+    return server
+
+
+mcp = _build_mcp(STREAMABLE_HTTP_PORT)
+
+
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    candidate_ports = []
+    for port in [STREAMABLE_HTTP_PORT, DEFAULT_STREAMABLE_HTTP_PORT, *STREAMABLE_HTTP_FALLBACK_PORTS]:
+        if port is None:
+            continue
+        if port not in candidate_ports:
+            candidate_ports.append(port)
+    if not candidate_ports:
+        candidate_ports.append(DEFAULT_STREAMABLE_HTTP_PORT)
+
+    last_exit: SystemExit | None = None
+    for port in candidate_ports:
+        mcp = _build_mcp(port)
+        try:
+            mcp.run(transport="streamable-http")
+            break
+        except SystemExit as exc:
+            last_exit = exc
+            if getattr(exc, "code", 0) != 1:
+                raise
+            logger.warning(
+                "Streamable HTTP transport failed to bind on port %s (exit code %s); trying next candidate.",
+                port,
+                exc.code,
+            )
+    else:
+        if last_exit is not None:
+            raise last_exit

@@ -1,4 +1,4 @@
-import os, pathlib, asyncio
+import os, pathlib, asyncio, re
 from dotenv import load_dotenv
 load_dotenv()
 from langchain_openai import ChatOpenAI
@@ -10,6 +10,16 @@ from langchain_core.messages.human import HumanMessage
 from langchain_core.messages.ai import AIMessage
 from pydantic import BaseModel, Field
 from langchain_core.tools import StructuredTool
+
+def _int_env(key: str, default: int) -> int:
+    value = os.getenv(key)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
 
 ollama_url = os.getenv("ollama_url")
 ollama_model = os.getenv("ollama_model")
@@ -24,10 +34,15 @@ llm = ChatOpenAI(
     base_url=f"{ollama_base_url}v1",
     api_key="ollama",
     temperature=0.2,
+    # Force 32k context in Ollama and expire sessions immediately.
+    extra_body={"keep_alive": 0, "options": {"num_ctx": 32000}},
 )
 
 BASE_DIR = pathlib.Path.cwd()
 SERVER_PATH = (BASE_DIR / ".." / "src" / "agents" / "mcp" / "server.py").resolve()
+
+MAX_RAG_SEGMENTS = max(1, _int_env("RAG_MAX_SEGMENTS", 6))
+MAX_RAG_CHARS = max(200, _int_env("RAG_MAX_CHARS", 2000))
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
@@ -75,6 +90,30 @@ async def _rag_call(query: str) -> str:
         )
     else:
         compiled = str(raw_result or "").strip()
+    if compiled:
+        # Prefer sections that mention words from the user's query when possible.
+        tokens = [t for t in re.split(r"\W+", query) if t]
+        segments = [seg.strip() for seg in compiled.split("\n\n") if seg.strip()]
+        selected = segments
+        # if tokens:
+        #     query_casefold = [t.casefold() for t in tokens]
+        #     scored = []
+        #     for seg in segments:
+        #         seg_cf = seg.casefold()
+        #         match_count = sum(1 for tok in query_casefold if tok and tok in seg_cf)
+        #         if match_count:
+        #             scored.append((match_count, -len(seg), seg))
+        #     if scored:
+        #         scored.sort(reverse=True)
+        #         selected = [item[2] for item in scored[:MAX_RAG_SEGMENTS]]
+        #     else:
+        #         selected = segments[:MAX_RAG_SEGMENTS]
+        # else:
+        #     selected = segments[:MAX_RAG_SEGMENTS]
+
+        compiled = "\n\n".join(selected)
+        # if len(compiled) > MAX_RAG_CHARS:
+        #     compiled = compiled[:MAX_RAG_CHARS]
     return compiled or "No related documents found."
 
 
@@ -99,7 +138,13 @@ strict_rules = (
     "IMPORTANT:\n"
     "- Do NOT use Markdown code fences.\n"
     "- When using a tool, output MUST be a JSON object matching the tool schema.\n"
-    "- For 'rag', the only valid input is: {{\"query\": \"<text>\"}}\n"
+    "- For 'rag', the only valid input is: {{\"query\": \"<text>\"}}.\n"
+    "- Final response must be {{\"action\": \"Final Answer\", \"action_input\": \"<text>\"}}.\n"
+    "- The final text is a single line containing 2-3 short facts about the user's request, separated by '; '.\n"
+    "- Focus strictly on information relevant to the question (ignore unrelated policy sections).\n"
+    "- If tool output mixes topics, prefer details that reuse the user's query terms.\n"
+    "- Avoid double quotes inside the final text; rely on single quotes or paraphrase them.\n"
+    "- Encode any newline as \\n if you must mention one, otherwise keep the text to a single line.\n"
 )
 prompt = ChatPromptTemplate.from_messages(
     [base_prompt.messages[0], ("system", strict_rules), *base_prompt.messages[1:]]
@@ -107,7 +152,15 @@ prompt = ChatPromptTemplate.from_messages(
 
 agent = create_structured_chat_agent(llm, tools, prompt)
 
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+agent_executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    verbose=True,
+    handle_parsing_errors=(
+        "FORMAT ERROR: respond with JSON like {\"action\": \"Final Answer\", \"action_input\": \"fact1; fact2\"}. "
+        "Keep it to a single line with '; ' separators and avoid double quotes."
+    ),
+)
 
 store = {}
 
@@ -139,7 +192,7 @@ cfg = {"configurable": {"session_id": "user-123"}}
 
 async def run_agent():
     res = await agent_with_history.ainvoke({"input": "CoreFlow의 휴가 규정에 대해서 알려줘."}, config=cfg)
-    # print(res)
+    print(res)
     
 asyncio.run(run_agent())
 
@@ -148,4 +201,3 @@ asyncio.run(run_agent())
 
 # res = agent_with_history.invoke({"input": "CoreFlow의 휴가 규정에 대해서 알려줘."}, config=cfg)
 # print(res)
-
