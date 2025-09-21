@@ -1,4 +1,4 @@
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Context
 from dotenv import load_dotenv
 import asyncio
 import logging
@@ -11,6 +11,8 @@ nest_asyncio.apply()
 from mcp.types import TextContent
 
 load_dotenv()
+
+mcp = FastMCP("RAG and Weather MCP Server")
 
 headers = {
     "authorization": os.getenv("myserver_api_key")
@@ -57,102 +59,23 @@ WEATHER_CODE_DESCRIPTIONS = {
     99: "Thunderstorm with heavy hail",
 }
 
-REQUEST_TIMEOUT = 120
-MAX_REQUEST_RETRIES = 3
+REQUEST_TIMEOUT = 180
 
-T = TypeVar("T")
-
-logger = logging.getLogger(__name__)
-
-
-def _parse_port(value: str | None) -> int | None:
-    if not value:
-        return None
-    try:
-        port = int(value)
-    except ValueError:
-        logger.warning("Invalid MCP_STREAMABLE_HTTP_PORT value '%s'.", value)
-        return None
-    if not (0 <= port <= 65535):
-        logger.warning("Out-of-range MCP_STREAMABLE_HTTP_PORT value '%s'.", value)
-        return None
-    return port
-
-
-def _parse_port_list(value: str | None) -> list[int]:
-    if not value:
-        return []
-    ports: list[int] = []
-    for item in value.split(","):
-        parsed = _parse_port(item.strip())
-        if parsed is not None and parsed not in ports:
-            ports.append(parsed)
-    return ports
-
-
-def _run_async(awaitable: Awaitable[T]) -> T:
-    """Execute an awaitable from synchronous code using the active loop."""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(awaitable)
-
-    return loop.run_until_complete(awaitable)
-
-def _post_json(url: str, payload: dict[str, Any], operation: str) -> Any:
-    last_error: RuntimeError | None = None
-    for attempt in range(MAX_REQUEST_RETRIES):
-        try:
-            response = requests.post(
-                url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT
-            )
-            response.raise_for_status()
-        except requests.HTTPError as exc:
-            status = exc.response.status_code if exc.response is not None else "unknown"
-            body = exc.response.text if exc.response is not None else ""
-            message = f"{operation} request failed with status {status}: {body[:200]}"
-            last_error = RuntimeError(message)
-            if 500 <= getattr(exc.response, "status_code", 0) < 600 and attempt < MAX_REQUEST_RETRIES - 1:
-                time.sleep(0.5 * (attempt + 1))
-                continue
-            raise RuntimeError(message) from exc
-        except requests.RequestException as exc:
-            last_error = RuntimeError(f"{operation} request failed: {exc}")
-            if attempt < MAX_REQUEST_RETRIES - 1:
-                time.sleep(0.5 * (attempt + 1))
-                continue
-            raise last_error from exc
-        try:
-            return response.json()
-        except ValueError as exc:
-            message = f"{operation} service returned invalid JSON."
-            raise RuntimeError(message) from exc
-    if last_error is not None:
-        raise last_error
-    raise RuntimeError(f"{operation} request failed unexpectedly.")
 
 class CustomEmbeddings:
     def embed_documents(self, texts):
-        data = _post_json(
-            embed_url,
-            {"texts": texts, "is_query": False},
-            "Embedding",
-        )
-        embeddings = data.get("embeddings")
-        if not isinstance(embeddings, list):
-            raise RuntimeError("Embedding service response missing embeddings.")
-        return embeddings
-
+        embed_docs_payload = {
+            "texts": texts,
+            "is_query": False
+        }
+        return requests.post(embed_url, json=embed_docs_payload, headers=headers).json()["embeddings"]
+    
     def embed_query(self, text):
-        data = _post_json(
-            embed_url,
-            {"texts": [text], "is_query": True},
-            "Embedding",
-        )
-        embeddings = data.get("embeddings")
-        if not isinstance(embeddings, list) or not embeddings:
-            raise RuntimeError("Embedding service response missing embeddings.")
-        return embeddings[0]
+        embed_query_payload = {
+            "texts": [text],
+            "is_query": True
+        }
+        return requests.post(embed_url, json=embed_query_payload, headers=headers).json()["embeddings"][0]
 
 def search_parent_docs(docs, parent_docs):
     searched_docs = []
@@ -161,7 +84,7 @@ def search_parent_docs(docs, parent_docs):
         for parent_doc in parent_docs:
             if doc_content in parent_doc:
                 searched_docs.append(parent_doc)
-
+    
     return searched_docs
 
 # 지역 이름을 입력하면 경도와 위도를 반환해주는 함수
@@ -231,22 +154,7 @@ def fetch_current_weather(location: str) -> str:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # server.py 위치
 DATA_PATH = os.path.join(BASE_DIR, "..", "..", "..", "data", "parent_split_docs_20250909.csv")
 DB_PATH = os.path.join(BASE_DIR, "..", "..", "..", "chroma_db")
-
-STREAMABLE_HTTP_HOST = os.getenv("MCP_STREAMABLE_HTTP_HOST", "127.0.0.1")
-DEFAULT_STREAMABLE_HTTP_PORT = 8000
-CONFIGURED_STREAMABLE_HTTP_PORT = _parse_port(os.getenv("MCP_STREAMABLE_HTTP_PORT"))
-STREAMABLE_HTTP_PORT = (
-    CONFIGURED_STREAMABLE_HTTP_PORT
-    if CONFIGURED_STREAMABLE_HTTP_PORT is not None
-    else DEFAULT_STREAMABLE_HTTP_PORT
-)
-DEFAULT_STREAMABLE_HTTP_FALLBACK_PORTS = [8010, 8020, 8030]
-CONFIGURED_STREAMABLE_HTTP_FALLBACK_PORTS = _parse_port_list(
-    os.getenv("MCP_STREAMABLE_HTTP_FALLBACK_PORTS")
-)
-STREAMABLE_HTTP_FALLBACK_PORTS = CONFIGURED_STREAMABLE_HTTP_FALLBACK_PORTS + [
-    port for port in DEFAULT_STREAMABLE_HTTP_FALLBACK_PORTS if port not in CONFIGURED_STREAMABLE_HTTP_FALLBACK_PORTS
-]
+# print(DB_PATH)
 
 # CSV/VectorStore는 프로세스 시작 시 1회 로드
 parent_docs_list: List[str] = []
@@ -258,7 +166,7 @@ else:
     parent_docs_list = []
 
 # RAG용 질문으로 변환
-def run_query_convert_agent(query: str) -> str:
+async def run_query_convert_agent(query: str) -> str:
     instructions = """You are an assistant that rewrites user input into a concise search query.
 - Focus on extracting the key entities, concepts, and intent.
 - Remove unnecessary filler words.
@@ -267,15 +175,16 @@ def run_query_convert_agent(query: str) -> str:
 User input: "{user_prompt}"
 Search query:"""
     qc_agent = Agent(name="Query Convert Assistant", instructions=instructions)
-    rag_query_result = _run_async(
-        Runner.run(qc_agent, f'User input: "{query}"\nSearch query:')
-    )
+    rag_query_result = await Runner.run(qc_agent, f'User input: "{query}"\nSearch query:')
     compressed = (rag_query_result.final_output or "").replace("Search query:", "").strip() or query
     
     return compressed
-def rag(query: str) -> TextContent:
+
+@mcp.tool()
+async def rag(query: str) -> TextContent:
     """CoreFlow internal document search."""
     normalized_query = query if isinstance(query, str) else json.dumps(query, ensure_ascii=False)
+    normalized_query = normalized_query.replace("CoreFlow", "")
     normalized_query = (normalized_query or "").strip()
     if not normalized_query:
         return TextContent(type="text", text="Please provide a query to search.", mimeType="text/plain")
@@ -288,7 +197,8 @@ def rag(query: str) -> TextContent:
         )
 
     try:
-        compressed = run_query_convert_agent(normalized_query)
+        compressed = await run_query_convert_agent(normalized_query)
+        # print(compressed)
     except Exception as exc:
         return TextContent(
             type="text",
@@ -321,36 +231,82 @@ def rag(query: str) -> TextContent:
         return TextContent(type="text", text="No related documents found.", mimeType="text/plain")
 
     try:
-        rerank_data = _post_json(
-            rerank_url,
-            {"query": normalized_query, "documents": searched_parent_docs},
-            "Rerank",
-        )
+        relevant_docs = []
+        scores = []
+        for searched_parent_doc in searched_parent_docs:
+            rerank_response = requests.post(rerank_url, json={"query":compressed, "documents":[searched_parent_doc]}, headers=headers)
+            rerank_data = rerank_response.json()
+            if rerank_data["results"][0]["score"] >= 0.9:
+                relevant_docs.append(rerank_data["results"][0]["text"])
+                scores.append(rerank_data["results"][0]["score"])
+        # rerank_response = requests.post(rerank_url, json={"query":compressed, "documents":searched_parent_docs}, headers=headers)
+        # rerank_data = rerank_response.json()
     except RuntimeError as exc:
         return TextContent(type="text", text=str(exc), mimeType="text/plain")
+    
+    if relevant_docs:
+        relevant_docs_df = pd.DataFrame({"docs":relevant_docs, "scores":scores}).drop_duplicates().sort_values(by="scores", ascending=False)
 
-    results = rerank_data.get("results") if isinstance(rerank_data, dict) else None
-    best_results: list[str] = []
-    if isinstance(results, list):
-        for result in results:
-            text = result.get("text") if isinstance(result, dict) else None
-            if text:
-                best_results.append(text)
-            if len(best_results) == 5:
-                break
+        if len(relevant_docs) > 1:
+            child_docs = []
+            for doc1 in relevant_docs:
+                for doc2 in relevant_docs:
+                    if doc1 == doc2:
+                        continue
+                    else:
+                        if doc1 in doc2:
+                            child_docs.append(doc1)
+
+            relevant_docs_df = relevant_docs_df[~relevant_docs_df["docs"].isin(child_docs)]
+        relevant_docs_df = relevant_docs_df.head(5)
+        # print(relevant_docs_df)
+    else:
+        return TextContent(type="text", text="No relevant documents found.", mimeType="text/plain")
+
+
+    
+    # print(rerank_data)
+
+    # results = rerank_data.get("results") if isinstance(rerank_data, dict) else None
+
+    # print(len(results))
+
+    # for result in results:
+    #     print(result)
+
+
+    # best_results: list[str] = []
+    # if isinstance(relevant_docs, list):
+    #     for result in relevant_docs:
+    #         text = result.get("text") if isinstance(result, dict) else None
+    #         if text:
+    #             best_results.append(text)
+    #         if len(best_results) == 5:
+    #             break
+
+    best_results = relevant_docs_df["docs"].tolist()
 
     if not best_results:
         return TextContent(type="text", text="No related documents found.", mimeType="text/plain")
+    
+    # print(best_results)
 
+    
     out = "\n\n---\n\n".join(best_results)
 
     return TextContent(type="text", text=out, mimeType="text/plain")
+    # return out
+
+# result = asyncio.run(rag("CoreFlow의 휴가 규정에 대해서 알려줘."))
+
+# print(result)
 
 
-
-
-def current_weather(location: str) -> str:
+@mcp.tool()
+def current_weather(location: str, ctx: Context) -> str:
     """Return the current weather for the requested location in Korea."""
+
+    asyncio.run(ctx.info(f"location: {location}"))
     
     if isinstance(location, dict):
         location = location["title"]
@@ -360,45 +316,5 @@ def current_weather(location: str) -> str:
     return fetch_current_weather(location)
 
 
-def _build_mcp(port: int) -> FastMCP:
-    server = FastMCP(
-        "Local MCP Server for tools",
-        host=STREAMABLE_HTTP_HOST,
-        port=port,
-    )
-    server.tool()(rag)
-    server.tool()(current_weather)
-    return server
-
-
-mcp = _build_mcp(STREAMABLE_HTTP_PORT)
-
-
 if __name__ == "__main__":
-    candidate_ports = []
-    for port in [STREAMABLE_HTTP_PORT, DEFAULT_STREAMABLE_HTTP_PORT, *STREAMABLE_HTTP_FALLBACK_PORTS]:
-        if port is None:
-            continue
-        if port not in candidate_ports:
-            candidate_ports.append(port)
-    if not candidate_ports:
-        candidate_ports.append(DEFAULT_STREAMABLE_HTTP_PORT)
-
-    last_exit: SystemExit | None = None
-    for port in candidate_ports:
-        mcp = _build_mcp(port)
-        try:
-            mcp.run(transport="streamable-http")
-            break
-        except SystemExit as exc:
-            last_exit = exc
-            if getattr(exc, "code", 0) != 1:
-                raise
-            logger.warning(
-                "Streamable HTTP transport failed to bind on port %s (exit code %s); trying next candidate.",
-                port,
-                exc.code,
-            )
-    else:
-        if last_exit is not None:
-            raise last_exit
+    mcp.run(transport="streamable-http")
