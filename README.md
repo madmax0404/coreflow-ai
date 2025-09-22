@@ -14,6 +14,7 @@ Contributors should review [AGENTS.md](AGENTS.md) for structure, tooling, and wo
 ## Environment Setup
 
 Copy `.env.example` to `.env`, then fill in local URLs and API keys for the embedding, rerank, geocode, and Ollama services before running the agent stack.
+
 ---
 
 ## 프로젝트 개요
