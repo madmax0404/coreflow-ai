@@ -182,7 +182,7 @@ Search query:"""
 
 @mcp.tool()
 async def rag(query: str) -> TextContent:
-    """CoreFlow internal document search."""
+    """The company(CoreFlow) internal document search tool."""
     normalized_query = query if isinstance(query, str) else json.dumps(query, ensure_ascii=False)
     normalized_query = normalized_query.replace("CoreFlow", "")
     normalized_query = (normalized_query or "").strip()
