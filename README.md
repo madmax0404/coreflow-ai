@@ -30,7 +30,7 @@ RAG란 사용자의 질문과 연관된 문서들을 검색/수집/첨부하여 
 - 고효율 & 확장성: 모든 지식을 대형 모델을 파인튜닝하여 파라미터에 담는 대신 소형 모델 사용 가능
 - 대형 모델 사용에 필요한 GPU 수급 비용 절감
 
-베이스 LLM은 구글의 소형 모델인 [Gemma3-4b-it-qat](https://deepmind.google/models/gemma/gemma-3/)을 [Ollama](https://ollama.com/)를 활용해 사용하였고, 임베딩 모델은 [Qwen3-Embedding-4B](https://huggingface.co/Qwen/Qwen3-Embedding-4B#evaluation),
+베이스 LLM은 OpenAI의 소형 오픈소스 모델인 [gpt-oss-20b](https://openai.com/index/introducing-gpt-oss/)를 [Ollama](https://ollama.com/)를 활용해 사용하였고, 임베딩 모델은 [Qwen3-Embedding-4B](https://huggingface.co/Qwen/Qwen3-Embedding-4B#evaluation),
 리랭커 모델은 [Qwen3-Reranker-4B](https://huggingface.co/Qwen/Qwen3-Reranker-4B#evaluation)를 사용하였습니다. 모든 모델들은 아래 사양의 컴퓨터로 로컬 환경에서 구동하였습니다.
 - **CPU**: AMD Ryzen 5800X3D
 - **GPU**: RTX 3090
@@ -44,7 +44,7 @@ RAG란 사용자의 질문과 연관된 문서들을 검색/수집/첨부하여 
 ## 기술 스택
 
 - **언어:** Python
-- **LLM/임베딩/리랭커 모델:** [Gemma3-4b-it-qat](https://deepmind.google/models/gemma/gemma-3/) / [Qwen3-Embedding-4B](https://huggingface.co/Qwen/Qwen3-Embedding-4B#evaluation) / [Qwen3-Reranker-4B](https://huggingface.co/Qwen/Qwen3-Reranker-4B#evaluation)
+- **LLM/임베딩/리랭커 모델:** [gpt-oss-20b](https://openai.com/index/introducing-gpt-oss/) / [Qwen3-Embedding-4B](https://huggingface.co/Qwen/Qwen3-Embedding-4B#evaluation) / [Qwen3-Reranker-4B](https://huggingface.co/Qwen/Qwen3-Reranker-4B#evaluation)
 - **LLM 스택:** [Ollama](https://ollama.com/), LangChain, [Transformers](https://huggingface.co/docs/transformers/index), [Sentence Transformers](https://sbert.net/), Chroma
 - **데이터 처리:** Pydantic, pandas
 - **웹 프레임워크:** FastAPI
@@ -83,7 +83,7 @@ ERP 시스템을 개발하며 사내 전용 AI 챗봇이 사내 규정 관련된
 
 Figure 1에서 확인 가능하듯, 이러한 방식은 성공적으로 모델이 사내 규정에 대해 대답할 수 있게 하였습니다.
 
-추가적으로, RAG 파이프라인은 질문에 CoreFlow라는 단어가 포함되어 있을 때만 실행시켜, 잡담 또한 가능하게 하였습니다.
+추가적으로, RAG 파이프라인은 MCP 툴로 변환하고, 베이스 LLM을 Agent화 시켜, 필요시 사용하도록 하였습니다.
 
 ---
 
@@ -93,13 +93,13 @@ Figure 1에서 확인 가능하듯, 이러한 방식은 성공적으로 모델�
 - **Hallucination 감소**: 불필요하거나 근거 없는 답변 빈도가 줄었으며, 사내 규정 관련 질문에서 실제 문서 기반의 응답 비율이 높아짐.
 - **검색 정확도 향상**: MMR 기반 검색 + 리랭커 조합으로, 사용자의 질문 의도를 더 잘 반영하는 문서들이 상위로 노출됨.
 - **실용성 확보**: “CoreFlow” 키워드 필터링을 적용해, 챗봇이 규정 질의 응답과 잡담을 동시에 처리 가능.
-- **로컬 환경에서 대규모 모델 운용 검증**: RTX 3090 기반 로컬 환경에서 Gemma3 + Qwen 시리즈 모델을 결합하여 실질적인 RAG 파이프라인 구축 가능성을 검증.
+- **로컬 환경에서 대규모 모델 운용 검증**: RTX 3090 기반 로컬 환경에서 gpt-oss-20b + Qwen 시리즈 모델을 결합하여 실질적인 RAG 파이프라인 구축 가능성을 검증.
 
 ---
 
 ## 결론 및 향후 과제
 
-본 프로젝트에서는 RAG(Retrieval-Augmented Generation) 기법을 활용하여 ERP 시스템 내 사내 규정 전용 챗봇을 성공적으로 구현하였습니다. 기존의 단순 chunk splitting 기반 접근 방식보다 향상된 검색 전략(문장 단위 분리 + 부모 문서 매핑 + 리랭킹)을 적용하여, 보다 정확하고 맥락 있는 답변을 제공할 수 있음을 확인하였습니다. 또한 RTX 3090 기반 로컬 환경에서 Gemma3 및 Qwen 시리즈 모델을 조합하여 실질적인 RAG 파이프라인 구축 가능성을 검증하였습니다.
+본 프로젝트에서는 RAG(Retrieval-Augmented Generation) 기법을 활용하여 ERP 시스템 내 사내 규정 전용 챗봇을 성공적으로 구현하였습니다. 기존의 단순 chunk splitting 기반 접근 방식보다 향상된 검색 전략(문장 단위 분리 + 부모 문서 매핑 + 리랭킹)을 적용하여, 보다 정확하고 맥락 있는 답변을 제공할 수 있음을 확인하였습니다. 또한 RTX 3090 기반 로컬 환경에서 gpt-oss-20b 및 Qwen 시리즈 모델을 조합하여 실질적인 RAG 파이프라인 구축 가능성을 검증하였습니다.
 
 향후 과제로는 다음과 같은 방향을 고려할 수 있습니다:
 - **대규모 실제 문서 적용**: 시뮬레이션된 규정 문서가 아닌, 실제 기업의 방대한 규정·매뉴얼·지식 문서를 대상으로 검증 필요.
