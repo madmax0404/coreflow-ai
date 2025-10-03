@@ -1,15 +1,15 @@
-# CoreFlow AI - RAG / Agent / MCP
+# CoreFlow AI — RAG / Agent / MCP
 
-KH정보교육원 파이널 프로젝트 ERP 시스템 CoreFlow의 AI 파트.
+The AI component of CoreFlow, an ERP system built as the final project at KH Information Educational Institute.
 
 https://github.com/YunSangsoo/COREFLOW_FRONTEND
 
 https://github.com/YunSangsoo/COREFLOW_BACKEND
 
-
 ## Repository Guidelines
 
-Contributors should review [AGENTS.md](AGENTS.md) for structure, tooling, and workflow expectations before pushing changes.
+Contributors should review [AGENTS.md](AGENTS.md)
+ for structure, tooling, and workflow expectations before pushing changes.
 
 ## Environment Setup
 
@@ -17,115 +17,115 @@ Copy `.env.example` to `.env`, then fill in local URLs and API keys for the embe
 
 ---
 
-## 프로젝트 개요
+## Project Overview
 
-본 프로젝트는 KH정보교육원에서 파이널 프로젝트인 ERP시스템 CoreFlow를 제작하며 제가 맡은 파트인 사내 전용 AI 챗봇 기능을 구현하며 진행되었습니다.
+This project implements an in-house AI chatbot for CoreFlow (the ERP final project at KH Information Educational Institute), which is the part I owned.
 
-목표는 RAG(Retrieval-Augmented Generation)를 사용하여 챗봇이 **사내 규정** 관련 답변을 할 수 있도록 하는 것이었습니다.
+The goal was to enable the chatbot to answer questions about **internal company policies** using RAG (Retrieval-Augmented Generation).
 
-RAG란 사용자의 질문과 연관된 문서들을 검색/수집/첨부하여 LLM 모델이 해당 문서들을 참고하여 사용자의 질문에 답변할 수 있도록 하는 기술이며, 장점은 아래와 같습니다.
-- 모델 답변에 최신 정보 반영
-- Hallucination 감소
-- 회사 내부 규정같은 특정 도메인 지식에 대한 답변 가능
-- 파인튜닝이 필요하지 않음
-- 고효율 & 확장성: 모든 지식을 대형 모델을 파인튜닝하여 파라미터에 담는 대신 소형 모델 사용 가능
-- 대형 모델 사용에 필요한 GPU 수급 비용 절감
+RAG augments a user query by retrieving and attaching relevant documents so that an LLM can reference them when generating answers. Its advantages include:
+- Incorporating up-to-date information into model responses
+- Reducing hallucinations
+- Answering questions in specific domains (e.g., internal policies)
+- No fine-tuning required
+- High efficiency & scalability: instead of fine-tuning a large model to “contain” all knowledge, you can use a smaller model
+- Lower GPU cost compared to running very large models
 
-베이스 LLM은 OpenAI의 소형 오픈소스 모델인 [gpt-oss-20b](https://openai.com/index/introducing-gpt-oss/)를 [Ollama](https://ollama.com/)를 활용해 사용하였고, 임베딩 모델은 [Qwen3-Embedding-4B](https://huggingface.co/Qwen/Qwen3-Embedding-4B#evaluation),
-리랭커 모델은 [Qwen3-Reranker-4B](https://huggingface.co/Qwen/Qwen3-Reranker-4B#evaluation)를 사용하였습니다. 모든 모델들은 아래 사양의 컴퓨터로 로컬 환경에서 구동하였습니다.
+The base LLM was OpenAI’s small open-source model [gpt-oss-20b](https://openai.com/index/introducing-gpt-oss/) served via [Ollama](https://ollama.com/). For embeddings we used [Qwen3-Embedding-4B](https://huggingface.co/Qwen/Qwen3-Embedding-4B#evaluation), and for reranking [Qwen3-Reranker-4B](https://huggingface.co/Qwen/Qwen3-Reranker-4B#evaluation). All models ran locally on the following machine:
 - **CPU**: AMD Ryzen 5800X3D
 - **GPU**: RTX 3090
-- **RAM**: 128GB
+- **RAM**: 128 GB
 
 ![chat screenshot](<images/coreflowaichatexample.png>)
-*Figure 1. CoreFlow AI 채팅 스크린샷*
+*Figure 1. CoreFlow AI chat screenshot*
 
 ---
 
-## 기술 스택
+## Tech Stack
 
-- **언어:** Python
-- **LLM/임베딩/리랭커 모델:** [gpt-oss-20b](https://openai.com/index/introducing-gpt-oss/) / [Qwen3-Embedding-4B](https://huggingface.co/Qwen/Qwen3-Embedding-4B#evaluation) / [Qwen3-Reranker-4B](https://huggingface.co/Qwen/Qwen3-Reranker-4B#evaluation)
-- **LLM 스택:** [Ollama](https://ollama.com/), LangChain, [Transformers](https://huggingface.co/docs/transformers/index), [Sentence Transformers](https://sbert.net/), Chroma
-- **데이터 처리:** Pydantic, pandas
-- **웹 프레임워크:** FastAPI
-- **개발 환경:** Windows 10/11, Linux Ubuntu Desktop 24.04 LTS, VS Code, Jupyter Notebook
-
----
-
-## 문제
-
-ERP 시스템을 개발하며 사내 전용 AI 챗봇이 사내 규정 관련된 정보에 대해서 답변을 할 수 있게 하려고 하였습니다.
-
-이는 일반적인 LLM API 사용만으로는 불가능하며, **RAG**의 필요성을 의미했습니다.
+- **Language**: Python
+- **LLM / Embedding / Reranker**: gpt-oss-20b / Qwen3-Embedding-4B / Qwen3-Reranker-4B
+- **LLM stack**: Ollama, LangChain, Transformers, Sentence Transformers, Chroma
+- **Data processing**: Pydantic, pandas
+- **Web framework**: FastAPI
+- **Dev environment**: Windows 10/11, Ubuntu Desktop 24.04 LTS, VS Code, Jupyter Notebook
 
 ---
 
-## 데이터셋
+## Problem
 
-사내 규정은 구글 Gemini의 Deep Research 기능을 사용해 A4용지 약 20장 분량의 문서들을 생성했으며, 총 1장~11장으로 이루어져 있습니다.
+While building the ERP system, we needed an internal chatbot that could answer questions about company policies.
+
+This is not feasible with a plain LLM API alone, underscoring the need for **RAG**.
 
 ---
 
-## 방법론 및 접근 방식
+## Dataset
 
-이 프로젝트에서는 단순히 문서를 일정 chunk size로 쪼개서 Vector DB에 저장하고, 사용자 쿼리를 그대로 검색하여 유사한 문서를 가져오고, 그 검색 결과만을 사용하는 일반적인 RAG 파이프라인이 아닌, 새로운 아이디어를 적용해보았습니다.
+We generated approximately 20 A4 pages of policy documents using Google Gemini’s Deep Research feature. The set consists of Chapters 1 through 11.
+
+---
+
+## Methodology & Approach
+
+Instead of the common RAG pipeline—uniform chunking into a vector DB, direct retrieval with the raw user query, and passing only those hits—we applied a new idea:
 
 1. **Splitting**
-    - **대분류 - 유사도 검색용 문서**: 먼저, 모든 문서들을 **문장별**로 쪼개어 Vector DB에 저장하였습니다.
-    - **대분류 - 부모 문서**: 그리고, 그 문장들이 포함될 **부모 문서들**을 각 장별, 소제목별, 문단별로 쪼개어 모두 CSV파일에 저장하였습니다.
-2. **검색**
-    - **Vector DB 검색용 쿼리로 변환**: 먼저, LLM을 이용하여 사용자의 질문을 Vector DB 검색에 최적화된 문장으로 변환합니다. 예) "CoreFlow의 휴가 규정에 대해서 알려줘." -> "CoreFlow 휴가 규정"
-    - **Vector DB 검색**: 변환되어 최적화된 문장을 사용하여 MMR방식("k":10, "fetch_k":50)으로 유사한 문장들을 가져옵니다.
-    - **부모 문서들 검색**: 위의 유사한 문장들이 포함된 부모 문서들을 검색하여 가져오고, 중복은 제거합니다.
-    - **리랭커**: 원래의 사용자 질문과 위의 부모 문서들을 리랭커가 평가합니다.
-3. **첨부**
-    - 리랭커에 의해 평가된 부모 문서들 중 상위 5개를 첨부하여 사용자의 질문과 함께 모델에게 전달합니다.
+    - **Class 1 — Sentence-level units for similarity search**: First, we split all documents by **sentence** and stored them in the vector DB.
+    - **Class 2 — Parent documents**: We also created **parent documents** (chapter/section/paragraph level) that contain those sentences and saved all of them to CSV.
+2. **Retrieval**
+    - **Convert to a vector-search-optimized query**: The user’s question is rewritten by the LLM into a query optimized for vector search. e.g., “Tell me about CoreFlow’s vacation policy.” → “CoreFlow vacation policy”
+    - **Vector DB search**: Using the optimized query, we retrieve similar sentences with MMR (k: 10, fetch_k: 50).
+    - **Parent document lookup**: For the retrieved sentences, we fetch their parent documents and deduplicate.
+    - **Reranker**: The reranker scores the original user question against the candidate parent documents.
+3. **Attachment**
+    - We attach the top 5 parent documents (by reranker score) to the user query and pass them to the model.
 
-Figure 1에서 확인 가능하듯, 이러한 방식은 성공적으로 모델이 사내 규정에 대해 대답할 수 있게 하였습니다.
+As shown in Figure 1, this approach successfully enabled the model to answer questions about internal policies.
 
-추가적으로, RAG 파이프라인은 MCP 툴로 변환하고, 베이스 LLM을 **Agent**화 시켜, 필요시 사용하도록 하였습니다.
-
----
-
-## 결과 및 주요 관찰
-
-- **기존 chunk splitting 방식 대비 향상된 답변 품질**: 단순 chunk 기반 검색보다, 문장 단위 + 부모 문서 + 리랭커 구조를 적용했을 때 더 정밀하고 맥락 있는 답변을 제공.
-- **Hallucination 감소**: 불필요하거나 근거 없는 답변 빈도가 줄었으며, 사내 규정 관련 질문에서 실제 문서 기반의 응답 비율이 높아짐.
-- **검색 정확도 향상**: MMR 기반 검색 + 리랭커 조합으로, 사용자의 질문 의도를 더 잘 반영하는 문서들이 상위로 노출됨.
-- **실용성 확보**: 베이스 LLM을 Agent로 만들어 챗봇이 규정 질의 응답과 잡담을 동시에 처리 가능.
-- **로컬 환경에서 대규모 모델 운용 검증**: RTX 3090 기반 로컬 환경에서 gpt-oss-20b + Qwen 시리즈 모델을 결합하여 실질적인 RAG 파이프라인 구축 가능성을 검증.
+Additionally, we converted the RAG pipeline into an MCP tool and made the base LLM into an **Agent** so it can invoke tools when needed.
 
 ---
 
-## 결론 및 향후 과제
+## Results & Key Observations
 
-본 프로젝트에서는 RAG(Retrieval-Augmented Generation) 기법을 활용하여 ERP 시스템 내 사내 규정 전용 챗봇을 성공적으로 구현하였습니다. 기존의 단순 chunk splitting 기반 접근 방식보다 향상된 검색 전략(문장 단위 분리 + 부모 문서 매핑 + 리랭킹)을 적용하여, 보다 정확하고 맥락 있는 답변을 제공할 수 있음을 확인하였습니다. 또한 RTX 3090 기반 로컬 환경에서 gpt-oss-20b 및 Qwen 시리즈 모델을 조합하여 실질적인 RAG 파이프라인 구축 가능성을 검증하였습니다.
-
-향후 과제로는 다음과 같은 방향을 고려할 수 있습니다:
-- **대규모 실제 문서 적용**: 시뮬레이션된 규정 문서가 아닌, 실제 기업의 방대한 규정·매뉴얼·지식 문서를 대상으로 검증 필요.
-- **멀티모달 확장**: 텍스트 외에도 이미지/표 등 다양한 포맷을 처리하는 RAG로 확장.
-- **모델 최적화 및 경량화**: 로컬 환경에서 더 빠른 추론을 위해 양자화, distillation, 캐싱 전략 적용.
-- **사용자 경험 개선**: 챗봇 UI 개선, 질의 의도 파악(예: 요약, FAQ, 검색 모드 자동 전환) 기능 추가.
-- **보안 및 접근 제어**: 사내 전용 데이터 사용 시 권한 관리와 로그 관리 기능 강화.
-- **고사양 환경에서의 검증**: 현재는 RTX 3090으로 RAG 파이프라인을 구동했으나, VRAM이 눈물겨운 비명을 지르는 걸 확인했습니다. 향후에는 A100/H100 같은 데이터센터급 GPU에서 테스트하여 더 큰 모델(≥7B, 13B)도 굴려보고 싶습니다. “3090아, 너는 잘 싸웠다… 이제 그만 쉬어라.”
+- **Improved answer quality vs. naive chunking**: The sentence-level + parent-document + reranker pipeline produced more precise, contextual answers than plain chunk-based retrieval.
+- **Reduced hallucination**: Fewer unfounded responses; a higher proportion of answers grounded in the actual policy text.
+- **Better retrieval accuracy**: The MMR + reranker combo surfaced documents that better reflected user intent.
+- **Practicality**: By wrapping the base LLM as an Agent, the chatbot could handle both policy Q&A and small talk.
+- **Local feasibility validated**: On a single RTX 3090, combining gpt-oss-20b with the Qwen models proved sufficient to stand up a practical RAG pipeline.
 
 ---
 
-## 프로젝트 실행 방법
+## Conclusion & Future Work
 
-본 레포지토리를 그대로 복제하여 실행하는 것은 불가능합니다.
-왜냐하면 본 프로젝트에서 사용한 LLM, 임베딩, 리랭커 모델은 제 개인 PC에서 구동 중이며, API 키를 발급·공유해야만 동일 환경이 재현되기 때문입니다. (보안은 소중하니까요.)
+We successfully implemented an internal-policy chatbot for the ERP system using RAG. Compared to simple chunk-splitting, our strategy (sentence-level splitting + parent-document mapping + reranking) yielded more accurate and contextual answers. We also validated that a local setup (RTX 3090) can run gpt-oss-20b with Qwen models to build a working RAG pipeline.
 
-다만, 업로드된 코드와 파이프라인 로직을 참고하시면 동일한 방식으로 RAG 시스템을 재구현하는 것은 충분히 가능합니다. 모델 및 환경 세팅만 본인 상황에 맞게 교체하시면 됩니다.
+Future directions:
+- **Scale to real-world corpora**: Validate on large, real corporate policy/manual/knowledge bases rather than simulated policies.
+- **Multimodal expansion**: Extend RAG beyond text to handle images/tables and other formats.
+- **Model optimization & slimming**: Apply quantization, distillation, and caching to speed up local inference.
+- **UX improvements**: Better chatbot UI; intent detection (e.g., auto-switching among summary/FAQ/search modes).
+- **Security & access control**: Strengthen authorization and logging for internal data.
+- **High-end validation**: We ran the pipeline on an RTX 3090 and heard its VRAM cry. Next, we’d like to test on data-center GPUs (A100/H100) and try larger models (≥7B, 13B). “3090, you fought bravely—now rest.”
+
+---
+
+## How to Run
+
+You cannot run this repository as-is.
+
+The LLM, embedding, and reranker services are hosted on my personal PC, and reproducing the exact environment would require issuing and sharing API keys (security matters!).
+
+However, the uploaded code and pipeline logic are sufficient to re-implement the same RAG approach. Replace the models and environment with ones that suit your setup.
 
 ---
 
 ## Acknowledgements
 
-- 본 프로젝트는 **KH정보교육원** 파이널 팀프로젝트 과정 중 진행되었습니다.
-- ERP 시스템 CoreFlow를 함께 개발한 팀원들에게 감사드립니다. (제가 맡은 AI 파트는 그 덕에 빛날 수 있었습니다 🙃)
-- RAG 및 LLM 오픈소스 생태계(Hugging Face, LangChain, Ollama, Chroma 등)를 만들어 주신 커뮤니티에도 큰 감사를 드립니다.
+- This work was carried out as part of the **KH Information Educational Institute** final team project.
+- Thanks to my CoreFlow teammates—your work made this AI part shine 🙃.
+- Deep appreciation to the open-source RAG/LLM community (Hugging Face, LangChain, Ollama, Chroma, etc.).
 
 ---
 
@@ -133,14 +133,4 @@ Figure 1에서 확인 가능하듯, 이러한 방식은 성공적으로 모델�
 
 Code © 2025 Jongyun Han (Max). Released under the MIT License. See the LICENSE file for details.
 
-Note: 본 레포지토리에는 **실제 데이터셋은 포함되어 있지 않으며**, 예시 규정 문서는 프로젝트 설명을 위해 생성된 데이터임. 
-실제 환경에 적용 시에는 반드시 해당 조직의 내부 규정/데이터를 사용해야 합니다.
-
-
-
-
-
-
-
-
-
+Note: This repository **does not include any real datasets.** The sample policy documents were generated to illustrate the project. For real deployments, always use your organization’s internal policies/data.
